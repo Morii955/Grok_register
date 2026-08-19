@@ -34,6 +34,80 @@
 
 ---
 
+## 快速开始（5 分钟跑起来）
+
+> 只想跑注册机？照下面 4 步走即可，不用先读后面文档。
+
+### 第 0 步：机器准备（对照检查）
+
+| 项 | 要求 |
+|----|------|
+| 系统 | Windows 10/11 或带图形桌面的 macOS / Linux |
+| Chrome | 本机装 Chrome（注册页靠它打开；[下载](https://www.google.com/chrome/)） |
+| 代理 | xAI 官网一般需要代理：需要一个本机能用的代理（Clash/V2Ray 等）并记下端口 |
+| Python | **不用自己装**，下面脚本会通过 uv 自动拉 Python 3.13 |
+
+### 第 1 步：一键装依赖
+
+```bash
+# Windows：在项目根目录打开 PowerShell
+powershell -ExecutionPolicy Bypass -File setup.ps1
+
+# macOS / Linux
+bash setup.sh
+```
+
+脚本依次做：安装/检查 uv → `uv sync`（自动下载 Python 3.13）→ 检查 Chrome → 从预设生成 `config.json` → 打印后续步骤。
+
+不想用脚本就手动跑这三条：
+
+```bash
+# ① 装 uv（已有则跳过）
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
+curl -LsSf https://astral.sh/uv/install.sh | sh              # macOS / Linux
+
+# ② 装依赖
+uv sync
+
+# ③ 生成配置
+cp config.cloudflare.json config.json
+```
+
+### 第 2 步：改代理端口（唯一必改项）
+
+打开 `config.json`，把 `proxy` 改成你本机的代理端口：
+
+```json
+"proxy": "http://127.0.0.1:7890"
+```
+
+邮箱服务（临时邮箱 Worker）和 CPA mint 参数预设里都已填好，其余字段不用动；mint 想走另一个代理就填 `cpa_proxy`（留空 = 跟 `proxy` 相同）。
+
+### 第 3 步：冒烟测试
+
+```bash
+uv run python -u register_cli.py --extra 1 --threads 1
+```
+
+日志里看到 `protocol token ok` / `mint protocol SUCCESS` 就说明整条链路正常（全程约 30–60s）。
+
+### 第 4 步：批量跑
+
+```bash
+uv run python -u register_cli.py --extra 200 --threads 4
+```
+
+**产出在哪：**
+
+| 文件 | 说明 |
+|------|------|
+| `accounts_cli.txt` | 账本 `email----password----sso` |
+| `cpa_auths/xai-<邮箱>.json` | CPA 认证文件（导入 CLIProxyAPI 用） |
+
+**可选 GUI：** `uv run python grok_register_ttk.py`，可视化配置代理/邮箱并点开始（GUI 会把配置自动存回 `config.json`）。
+
+---
+
 ## 本版主要改动
 
 ### 1. Hotmail / Outlook：`邮箱----密码----ClientID----Token`
@@ -157,14 +231,18 @@ your@hotmail.com----mailPassword----xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx----0.AX
 
 | 依赖 | 说明 |
 |------|------|
-| macOS / Linux + 桌面 | 协议 mint **不需要**浏览器；回退浏览器时需要 `DISPLAY` / 本机 GUI |
-| `uv` + Python 3.13 | 本目录 `pyproject.toml` / `uv.lock`；可选 `mise` |
-| `chromium` | 仅注册 + 协议失败回退时需要 |
-| 代理 | xAI / accounts.x.ai 通常需要，如 `http://127.0.0.1:7890` |
+| Windows 10/11 或 macOS/Linux + 桌面 | 协议 mint **不需要**浏览器；注册页与回退浏览器需要本机 GUI + Chrome |
+| `uv` + Python 3.13 | 本目录 `pyproject.toml` / `uv.lock`；**一键装**：`setup.ps1`（Windows）/ `setup.sh`（macOS/Linux）；可选 `mise` |
+| Chrome | 仅注册 + 协议失败回退时需要 |
+| 代理 | xAI / accounts.x.ai 通常需要，如 `http://127.0.0.1:7890`；**填在 `config.json` 的 `proxy`** |
 | 可选 | 本机 grok2api `:8000`、CLIProxyAPI(CPA) `:8317` |
 
 ```bash
 cd /path/to/grok_reg-protocol_cpa
+# 一键（推荐，见「快速开始」）：
+powershell -ExecutionPolicy Bypass -File setup.ps1    # Windows
+bash setup.sh                                         # macOS / Linux
+# 或手动：
 uv sync
 uv run python -c "from DrissionPage import Chromium; from curl_cffi import requests; print('OK')"
 ```
@@ -361,6 +439,8 @@ grok_reg-protocol_cpa/
     backfill_cpa_xai_from_accounts.py
     export_cpa_xai_from_grok_auth.py
   config.example.json
+  config.cloudflare.json       # 临时邮箱 Worker 预设（setup 脚本用它生成 config.json）
+  setup.ps1 / setup.sh         # 一键环境准备（Windows / macOS / Linux）
   config.json                  # 本地实配（勿外泄）
   mail_credentials.example.txt # 邮箱----密码----ClientID----Token 模板
   mail_credentials.txt         # 本地邮箱池（勿提交）
@@ -372,15 +452,14 @@ grok_reg-protocol_cpa/
 
 ---
 
-
-```bash
-cd grok_reg-protocol_cpa
-uv sync
-cp config.example.json config.json
-cp mail_credentials.example.txt mail_credentials.txt
-# 填 hotmail 四段凭证 + proxy，再运行
-uv run python -u register_cli.py --extra 1
-```
+> 快速开始（clone → 5 分钟跑起来）见文档顶部「快速开始」章节：`setup.ps1` / `setup.sh` 一键装好依赖并生成 `config.json`，改一下 `proxy` 端口即可跑 `uv run python -u register_cli.py --extra 1`。
+>
+> 用 Hotmail 邮箱的话额外两步：
+>
+> ```bash
+> cp mail_credentials.example.txt mail_credentials.txt   # 填 邮箱----密码----ClientID----Token
+> # 并把 config.json 的 email_provider 改为 "hotmail"
+> ```
 ---
 
 ## 安全
