@@ -1,42 +1,30 @@
-# grok_reg-protocol_cpa
+# Grok 注册机（CPA 版）
 
-基于 **Chromium + DrissionPage + turnstilePatch** 的免费 Grok 账号注册机。
+基于 **Chromium + DrissionPage + turnstilePatch** 的免费 Grok 账号注册机。注册成功拿到 SSO 后，自动铸造 **CPA 认证文件（OIDC）**，可直接导入 CLIProxyAPI 类网关调用免费 Grok Build（`cli-chat-proxy`）。
 
-本分支在原版注册机基础上新增了两点：
+**核心能力：**
 
-1. **Hotmail / Outlook 邮箱凭证池**  
-   支持 `邮箱----密码----ClientID----Token` 四段格式读取与 XOAUTH2 IMAP 收验证码。
-2. **协议优先的  导出**  
-   注册拿到 SSO 后，优先用 **纯 HTTP Device Flow**（`curl_cffi` + `sso` cookie）铸造 CPA 用的 `xai-*.json`；协议失败再回退原浏览器 consent 逻辑。
+- **注册**：本机 Chrome + turnstilePatch 过 CF；邮箱支持 Cloudflare 临时邮箱 Worker（无 key，预设已配）/ Hotmail 四段凭证（XOAUTH2 IMAP 收码）/ CloudMail / testmail 等
+- **SSO 导出**：注册成功自动写账本 `email----password----sso`，可推 grok2api Web 池（可选）
+- **CPA 铸造（协议优先）**：有 SSO 时先走**纯 HTTP Device Flow**（约 6–9s/号），失败回退**有头浏览器 consent**（约 45–90s/号），产出 `cpa_auths/xai-<邮箱>.json`
+- **运维脚本**：存量号批量补 CPA、SSO 存活扫描、CPA token 全量验证（refresh grant 轮换）
+- **一键环境**：`setup.ps1` / `setup.sh`（自动装 uv + Python 3.13 + 依赖、检查 Chrome、生成预填配置）
 
-一条成功链路会产出两类凭证：
+**产物：**
 
-| 产物 | 用途 | 路径 |
+| 产物 | 用途 | 位置 |
 |------|------|------|
 | **SSO** | grok.com / grok2api Web 池 | 账本第三段 + 可选推远端池 |
-| **OIDC（CPA xAI）** | 免费 **Grok 4.5**（Grok Build / cli-chat-proxy） | `cpa_auths/xai-<email>.json` |
+| **CPA（OIDC）xAI** | 免费 Grok Build（`cli-chat-proxy.grok.com`） | `cpa_auths/xai-<邮箱>.json` |
 
-> **硬约束：SSO ≠ OIDC。**  
-> 免费 Grok 4.5 **不能**用账本里的 sso JWT 直接打 API；必须再走  
-> `accounts.x.ai` device-auth 铸 OIDC，写成 CPA 的 `type=xai` 认证文件。  
-> 本仓库的协议路径正是用 **SSO cookie 自动完成** 这一步（无需再弹浏览器时优先走协议）。
-
-本仓库**自包含** OIDC/CPA 铸造代码（`cpa_xai/`）：
-
-| 路径 | 说明 |
-|------|------|
-| `cpa_xai/protocol_mint.py` | **新增**：SSO → 纯 HTTP Device Flow（verify / approve / token） |
-| `cpa_xai/mint.py` | 协议优先，失败回退 `mint_with_browser` |
-| `cpa_xai/browser_confirm.py` | 原逻辑：有头 Chromium 完成 consent |
-| `cpa_export.py` | 注册成功 hook |
-| `scripts/backfill_cpa_xai_from_accounts.py` | 存量账号批量补 CPA |
-| `scripts/export_cpa_xai_from_grok_auth.py` | 从 `~/.grok/auth.json` 导出 |
+> **关键概念：SSO ≠ OIDC。**  
+> 免费 Grok Build **不能**用账本里的 SSO JWT 直接打 API；必须再走 `accounts.x.ai` device-auth 铸 OIDC，写成 CPA 的 `type=xai` 认证文件。本项目的协议路径正是用 SSO cookie **自动完成**这一步（优先纯 HTTP，无需再弹浏览器）。
 
 ---
 
 ## 快速开始（5 分钟跑起来）
 
-> 只想跑注册机？照下面 4 步走即可，不用先读后面文档。
+> 只想跑注册机？照下面 4 步走即可。
 
 ### 第 0 步：机器准备（对照检查）
 
@@ -44,8 +32,8 @@
 |----|------|
 | 系统 | Windows 10/11 或带图形桌面的 macOS / Linux |
 | Chrome | 本机装 Chrome（注册页靠它打开；[下载](https://www.google.com/chrome/)） |
-| 代理 | xAI 官网一般需要代理：需要一个本机能用的代理（Clash/V2Ray 等）并记下端口 |
-| Python | **不用自己装**，下面脚本会通过 uv 自动拉 Python 3.13 |
+| 代理 | xAI 官网一般需要代理：需要本机能用的代理（Clash/V2Ray 等）并记下端口 |
+| Python | **不用自己装**，脚本会通过 uv 自动拉 Python 3.13 |
 
 ### 第 1 步：一键装依赖
 
@@ -59,7 +47,7 @@ bash setup.sh
 
 脚本依次做：安装/检查 uv → `uv sync`（自动下载 Python 3.13）→ 检查 Chrome → 从预设生成 `config.json` → 打印后续步骤。
 
-不想用脚本就手动跑这三条：
+不想用脚本就手动跑：
 
 ```bash
 # ① 装 uv（已有则跳过）
@@ -81,7 +69,7 @@ cp config.cloudflare.json config.json
 "proxy": "http://127.0.0.1:7890"
 ```
 
-邮箱服务（临时邮箱 Worker）和 CPA mint 参数预设里都已填好，其余字段不用动；mint 想走另一个代理就填 `cpa_proxy`（留空 = 跟 `proxy` 相同）。
+邮箱服务（临时邮箱 Worker）和 CPA 参数预设里都已填好，其余字段不用动；CPA 铸造想走另一个代理就填 `cpa_proxy`（留空 = 跟 `proxy` 相同）。
 
 ### 第 3 步：冒烟测试
 
@@ -89,7 +77,7 @@ cp config.cloudflare.json config.json
 uv run python -u register_cli.py --extra 1 --threads 1
 ```
 
-日志里看到 `protocol token ok` / `mint protocol SUCCESS` 就说明整条链路正常（全程约 30–60s）。
+日志里看到 `protocol token ok` / `mint protocol SUCCESS` 即整条链路正常（全程约 30–60s）。
 
 ### 第 4 步：批量跑
 
@@ -108,238 +96,16 @@ uv run python -u register_cli.py --extra 200 --threads 4
 
 ---
 
-## 本版主要改动
+## 使用
 
-### 1. Hotmail / Outlook：`邮箱----密码----ClientID----Token`
-
-设置：
-
-```json
-{
-  "email_provider": "hotmail",
-  "hotmail_accounts_file": "mail_credentials.txt",
-  "hotmail_max_aliases_per_account": 5
-}
-```
-
-凭证文件（可从模板复制）：
+### A. 新注册 N 个号（含 SSO + CPA 导出）
 
 ```bash
-cp mail_credentials.example.txt mail_credentials.txt
+uv run python -u register_cli.py --extra 1 --threads 1    # 再注册 1 个（推荐先跑这个）
+uv run python -u register_cli.py --extra 5 --threads 2    # 再注册 5 个
 ```
 
-**每行格式（四段，`----` 分隔）：**
-
-```text
-邮箱----密码----ClientID----Token
-```
-
-| 段 | 含义 |
-|----|------|
-| 邮箱 | Hotmail / Outlook 主邮箱 |
-| 密码 | 邮箱登录密码（注册机侧保留；IMAP 走 OAuth） |
-| ClientID | 微软应用（Azure AD 应用）Client ID |
-| Token | Microsoft OAuth2 **refresh_token**（XOAUTH2 IMAP 用） |
-
-示例：
-
-```text
-your@hotmail.com----mailPassword----xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx----0.AXcA...refresh_token...
-```
-
-运行时行为摘要：
-
-- 默认先用原邮箱，后续用随机 plus alias（如 `name+k8s2p9qa@domain`）
-- 经 `outlook.office365.com`（可回退 `imap-mail.outlook.com`）XOAUTH2 IMAP 拉验证码
-- refresh_token 若轮换会**自动回写** `mail_credentials.txt`
-- 成功 / 失败 / 占用中的 alias 会参与去重与 `hotmail_max_aliases_per_account` 计数
-
-相关配置见 `config.example.json` 中 `hotmail_*` 注释键。
-
-### 2. 协议 OIDC → CPA（失败回退浏览器）
-
-```
-注册成功拿到 sso cookie
-        ↓
-【优先】protocol_mint：curl_cffi + sso
-   device/code → verify → approve → token 轮询
-        ↓ 成功
-  cpa_auths/xai-<email>.json   mint_method=protocol
-        ↓ 失败
-【回退】browser_confirm：有头 Chromium + turnstilePatch
-   同一套 device-auth，页面点「允许」
-        ↓
-  cpa_auths/xai-<email>.json   mint_method=browser
-```
-
-实测协议路径约数秒级即可完成（含 probe）；浏览器路径约 40–60s/号。
-
-关键配置：
-
-| 字段 | 默认 | 含义 |
-|------|------|------|
-| `cpa_prefer_protocol` | `true` | 有 SSO 时先走纯 HTTP 协议 mint |
-| `cpa_protocol_only` | `false` | `true`=协议失败也不回退浏览器（调试用） |
-| `cpa_protocol_poll_timeout_sec` | `90` | 协议路径 token 轮询超时 |
-| `cpa_export_enabled` | `true` | 注册成功后是否 mint OIDC |
-| `cpa_auth_dir` | `./cpa_auths` | 主导出目录 |
-| `cpa_base_url` | `https://cli-chat-proxy.grok.com/v1` | 免费 Build **必须**此上游 |
-| `cpa_headless` | `false` | 回退浏览器时建议有头 |
-| `cpa_force_standalone` | `true` | 回退时独立 Chromium，不复用注册 tab |
-| `cpa_mint_cookie_inject` | `true` | 回退时注入注册 cookie，尽量跳过二次登录 |
-
-日志里可看到：
-
-```text
-[cpa] mint try protocol (SSO HTTP device flow)
-[cpa] protocol token ok ...
-[cpa] mint protocol SUCCESS
-[cpa] mint_method=protocol
-```
-
-协议失败时类似：
-
-```text
-[cpa] mint protocol failed: ...
-[cpa] mint fallback → browser
-[cpa] mint_method=browser
-```
-
----
-
-## 整链示意
-
-```
-[邮箱 Hotmail/Outlook 或 CloudMail 等]
-       ↓  注册 accounts.x.ai
- accounts_*.txt / accounts_cli.txt    email----password----sso
-       ↓
- grok2api 池 (可选)                   SSO → Web 非免费档模型
-       ↓
- OIDC mint（协议优先 → 浏览器回退）
-       ↓
- cpa_auths/xai-email.json             【注册机主导出】
-       ↓ (cpa_copy_to_hotload=true 时)
- CPA auth-dir 热加载                  【可选】
-       ↓
- CLIProxyAPI :8317                    model=grok-4.6（当前免费档）
-```
-
----
-
-## 环境
-
-| 依赖 | 说明 |
-|------|------|
-| Windows 10/11 或 macOS/Linux + 桌面 | 协议 mint **不需要**浏览器；注册页与回退浏览器需要本机 GUI + Chrome |
-| `uv` + Python 3.13 | 本目录 `pyproject.toml` / `uv.lock`；**一键装**：`setup.ps1`（Windows）/ `setup.sh`（macOS/Linux）；可选 `mise` |
-| Chrome | 仅注册 + 协议失败回退时需要 |
-| 代理 | xAI / accounts.x.ai 通常需要，如 `http://127.0.0.1:7890`；**填在 `config.json` 的 `proxy`** |
-| 可选 | 本机 grok2api `:8000`、CLIProxyAPI(CPA) `:8317` |
-
-```bash
-cd /path/to/grok_reg-protocol_cpa
-# 一键（推荐，见「快速开始」）：
-powershell -ExecutionPolicy Bypass -File setup.ps1    # Windows
-bash setup.sh                                         # macOS / Linux
-# 或手动：
-uv sync
-uv run python -c "from DrissionPage import Chromium; from curl_cffi import requests; print('OK')"
-```
-
-或用 mise：
-
-```bash
-mise install
-mise run deps
-```
-
----
-
-## 配置
-
-1. 复制模板并编辑（模板内 `"//…"` 键是注释，加载时忽略）：
-
-```bash
-cp config.example.json config.json
-# 编辑：email_provider、proxy、hotmail_*、cpa_*
-```
-
-2. **字段详解见 `config.example.json` 内注释键**。
-
-### 代理优先级
-
-| 字段 | 作用 |
-|------|------|
-| `proxy` | **注册** Chromium + 邮箱等 HTTP |
-| `cpa_proxy` | **OIDC mint**（协议 HTTP + 回退浏览器 + probe） |
-
-```
-cpa_proxy  >  proxy  >  环境变量 https_proxy/http_proxy
-```
-
-配置优先于 shell 里的 `https_proxy`，避免「config 写了 7890 却被环境变量盖掉」。
-
-### 与 CPA 相关的关键项（摘要）
-
-| 字段 | 含义 | 建议 |
-|------|------|------|
-| `cpa_export_enabled` | 注册成功后是否 mint OIDC | `true` |
-| `cpa_prefer_protocol` | SSO 协议优先 | `true` |
-| `cpa_protocol_only` | 仅协议、不回退浏览器 | 调试时 `true`，日常 `false` |
-| `cpa_auth_dir` | **主导出目录** | `./cpa_auths` |
-| `cpa_copy_to_hotload` | 是否复制到 CPA 热加载目录 | 可选，默认 `false` |
-| `cpa_hotload_dir` | CPA `auth-dir` | 仅 copy 时需要 |
-| `cpa_base_url` | 上游 API 根 | **必须** `https://cli-chat-proxy.grok.com/v1` |
-| `cpa_headless` | 回退浏览器是否无头 | **`false`** |
-| `cpa_force_standalone` | 回退时独立浏览器 | **`true`** |
-| `cpa_proxy` | mint 专用代理 | 如 `http://127.0.0.1:7890` |
-| `cpa_mint_required` | mint 失败是否整号失败 | 通常 `false` |
-
-CLI 与 GUI 都会在注册成功后读这些配置。GUI 下 CPA 导出会串行，避免多窗口抢焦点。
-
-### 落盘约定
-
-| 路径 | 是否必须 | 说明 |
-|------|----------|------|
-| `mail_credentials.txt` | hotmail 模式必须 | `邮箱----密码----ClientID----Token` |
-| `accounts_cli.txt` / `accounts_*.txt` | 是 | 主账本 `email----password----sso` |
-| `cpa_auths/xai-*.json` | 是（开 export 时） | CPA 格式 OIDC 归档 |
-| CPA `…/auths/xai-*.json` | 可选 | 热加载；由 `cpa_copy_to_hotload` 控制 |
-
----
-
-## 命令：批量注册 + 认证
-
-前置：
-
-```bash
-cd /path/to/grok_reg-protocol_cpa
-# 代理建议写在 config.json 的 proxy / cpa_proxy
-# 回退浏览器时需要桌面会话
-export DISPLAY=${DISPLAY:-:0}
-```
-
-### A. 新注册 N 个号（含 SSO + OIDC 导出）
-
-```bash
-# 再注册 1 个（推荐）
-uv run python -u register_cli.py --extra 1 --threads 1
-
-# 再注册 5 个
-uv run python -u register_cli.py --extra 5 --threads 2
-
-# GUI
-uv run python grok_register_ttk.py
-# 或 mise run gui / mise run register
-```
-
-成功时：
-
-1. 追加账本 `email----password----sso`
-2. 可选：推 grok2api
-3. 若 `cpa_export_enabled`：协议 mint（失败则浏览器）→ `cpa_auths/xai-<email>.json`
-4. 若 `cpa_copy_to_hotload`：再拷到 `cpa_hotload_dir`
+成功时：① 追加账本 → ② 可选推 grok2api → ③ 协议 mint（失败回退浏览器）写 `cpa_auths/xai-<邮箱>.json` → ④ 可选复制到 CPA 热加载目录（`cpa_copy_to_hotload=true`）。
 
 ### B. 存量号补 CPA（只 mint，不重新注册）
 
@@ -347,8 +113,7 @@ uv run python grok_register_ttk.py
 
 ```bash
 uv run python -u scripts/backfill_cpa_xai_from_accounts.py \
-  --accounts accounts_cli.txt \
-  --limit 1 --probe --timeout 300
+  --accounts accounts_cli.txt --limit 1 --probe --timeout 300
 
 # 全量缺失号
 uv run python -u scripts/backfill_cpa_xai_from_accounts.py \
@@ -361,27 +126,40 @@ uv run python -u scripts/backfill_cpa_xai_from_accounts.py \
 | `--email x@y` | 只处理指定邮箱 |
 | `--out-dir` | 主导出目录 |
 | `--cpa-dir` | 成功后复制到 CPA 热加载目录 |
-| `--probe` | 检查是否列出最新 `grok-4.x` 免费模型（当前 `grok-4.6`） |
+| `--probe` | 检查是否列出最新 `grok-4.x` 免费模型 |
 | `--headless` | 回退浏览器时无头（不推荐） |
 
-### C. 从 `~/.grok/auth.json` 导出 CPA 文件
+多账本全量补跑 / SSO 存活扫描：
+
+```bash
+uv run python -u scripts/backfill_all_ledgers.py --target 0 --workers 5   # 按目标数补跑全部账本
+uv run python -u scripts/sweep_sso_alive.py --workers 8                   # 扫描账本里哪些 SSO 还活着
+uv run python -u scripts/resweep_errors.py                                # 重试扫描中 error 的行
+```
+
+### C. CPA token 全量验证（refresh grant）
+
+```bash
+uv run python -u scripts/verify_cpa_tokens.py --dir cpa_auths --workers 10 --proxy http://127.0.0.1:7890
+```
+
+对每个文件发 `grant_type=refresh_token` 换 token：200 即有效，并**原地轮换重写** token（验证后旧 token 作废，重新分发要再拷一遍）。
+
+### D. 从 `~/.grok/auth.json` 导出 CPA
 
 ```bash
 uv run python scripts/export_cpa_xai_from_grok_auth.py --out-dir ./cpa_auths
 ```
 
-### D. 手动导入 CPA 热加载
+### E. 导入 CPA 热加载 + 调用验证（免费 Grok）
 
 ```bash
+# 导入（示例 Linux；Windows 直接拷文件进 auth-dir 即可）
 cp -a ./cpa_auths/xai-USER@domain.json "$CPA_AUTH_DIR"/
 chmod 600 "$CPA_AUTH_DIR"/xai-USER@domain.json
-```
 
-### E. 调用验证（免费 Grok 4.6）
-
-```bash
+# 验证（CPA 网关 :8317）
 KEY="<你的 CPA API KEY>"
-
 curl -sS http://127.0.0.1:8317/v1/models -H "Authorization: Bearer $KEY" | head
 
 curl -sS http://127.0.0.1:8317/v1/chat/completions \
@@ -394,16 +172,123 @@ curl -sS http://127.0.0.1:8317/v1/chat/completions \
   }'
 ```
 
----
-
-## CLI 参数速查（`register_cli.py`）
+### CLI 参数速查（`register_cli.py`）
 
 | 参数 | 含义 |
 |------|------|
 | `--extra N` | **再新注册 N 个**（推荐） |
 | `--count N` | 账号**总数目标**（含已有）；已达标则退出 |
 | `--threads N` | 并发 1–10 |
+| `--mint-workers N` | CPA 协议 mint 并发 |
 | `--accounts-file` | 账本路径 |
+
+### 邮箱：Hotmail 四段凭证（可选）
+
+`config.json` 设 `"email_provider": "hotmail"`，凭证文件 `mail_credentials.txt`（可从 `mail_credentials.example.txt` 复制）：
+
+```text
+邮箱----密码----ClientID----Token
+```
+
+| 段 | 含义 |
+|----|------|
+| 邮箱 | Hotmail / Outlook 主邮箱 |
+| 密码 | 邮箱登录密码（注册机侧保留；IMAP 走 OAuth） |
+| ClientID | 微软应用（Azure AD 应用）Client ID |
+| Token | Microsoft OAuth2 **refresh_token**（XOAUTH2 IMAP 用） |
+
+运行时行为：默认先用原邮箱，后续用随机 plus alias（如 `name+k8s2p9qa@domain`）；经 `outlook.office365.com`（可回退 `imap-mail.outlook.com`）XOAUTH2 IMAP 拉验证码；refresh_token 轮换会**自动回写**文件；成功/失败/占用中的 alias 参与去重与 `hotmail_max_aliases_per_account` 计数。
+
+---
+
+## 配置
+
+### 文件
+
+| 文件 | 说明 |
+|------|------|
+| `config.json` | 本地实配（setup 脚本从预设生成；**含本机信息，勿提交/勿分享**） |
+| `config.cloudflare.json` | 临时邮箱 Worker 预设（开箱即用，只需改 `proxy`） |
+| `config.example.json` | 全字段模板，每个字段带 `"// 注释"` 键详解（加载时自动忽略） |
+
+### 代理优先级
+
+| 字段 | 作用 |
+|------|------|
+| `proxy` | **注册** Chromium + 邮箱等 HTTP |
+| `cpa_proxy` | **CPA 铸造**（协议 HTTP + 回退浏览器 + probe） |
+
+```
+cpa_proxy  >  proxy  >  环境变量 https_proxy/http_proxy
+```
+
+### 关键字段
+
+| 字段 | 默认 | 含义 |
+|------|------|------|
+| `email_provider` | — | `cloudflare`（临时邮箱 Worker，预设默认）/ `hotmail` / `cloudmail` / `duckmail` / `yyds` |
+| `defaultDomains` | — | 注册用邮箱域名（逗号分隔） |
+| `cpa_export_enabled` | `true` | 注册成功后是否 mint CPA |
+| `cpa_prefer_protocol` | `true` | 有 SSO 时先走纯 HTTP Device Flow |
+| `cpa_protocol_only` | `false` | `true`=协议失败也不回退浏览器（调试用） |
+| `cpa_mint_required` | `false` | `false`=mint 失败不丢号（留账本，可事后 backfill） |
+| `cpa_auth_dir` | `./cpa_auths` | 主导出目录 |
+| `cpa_copy_to_hotload` | `false` | 成功后复制到 CPA 热加载目录 |
+| `cpa_hotload_dir` | — | CPA 的 `auth-dir`（copy 时需要） |
+| `cpa_base_url` | `https://cli-chat-proxy.grok.com/v1` | 免费 Build 上游，**不要改** |
+| `cpa_headless` | `false` | 回退浏览器时是否无头（**建议 false**） |
+| `cpa_force_standalone` | `true` | 回退时独立 Chromium，不复用注册 tab |
+| `cpa_mint_cookie_inject` | `true` | 回退时注入注册 cookie，尽量跳过二次登录 |
+| `cpa_mint_workers` | `-1` | 协议 mint 并发（-1=跟随注册线程） |
+| `grok2api_auto_add_local` | `false` | 注册成功自动推本机 grok2api `:8000` |
+
+完整字段（含各超时参数）见 `config.example.json` 内注释。
+
+### 落盘约定
+
+| 路径 | 是否必须 | 说明 |
+|------|----------|------|
+| `accounts_cli.txt` / `accounts_*.txt` | 是 | 主账本 `email----password----sso` |
+| `cpa_auths/xai-*.json` | 开 export 时 | CPA 格式 OIDC 归档 |
+| `mail_credentials.txt` | hotmail 模式必须 | `邮箱----密码----ClientID----Token` |
+| `emails_used.txt` / `emails_error.txt` | 自动 | 邮箱去重 / 错误记录 |
+
+---
+
+## 链路原理
+
+```
+[邮箱：Cloudflare Worker / Hotmail / CloudMail …]
+        ↓  注册 accounts.x.ai（本机 Chrome + turnstilePatch）
+ accounts_cli.txt                          email----password----sso
+        ↓  可选：推 grok2api Web 池（SSO）
+ CPA 铸造（cpa_prefer_protocol=true）
+   ├─ 协议：curl_cffi + sso cookie → device/code → verify → approve → token 轮询（6-9s/号）
+   └─ 回退：有头 Chromium + turnstilePatch，同一套 device-auth 页面点「允许」（45-90s/号）
+        ↓
+ cpa_auths/xai-<邮箱>.json                 【注册机主导出，mint_method 字段标明走了哪条路径】
+        ↓  (cpa_copy_to_hotload=true 时)
+ CPA auth-dir 热加载（可选）
+        ↓
+ CLIProxyAPI :8317                          model=grok-4.6（当前免费档）
+```
+
+协议成功日志：
+
+```text
+[cpa] mint try protocol (SSO HTTP device flow)
+[cpa] protocol token ok ...
+[cpa] mint protocol SUCCESS
+[cpa] mint_method=protocol
+```
+
+协议失败时自动回退：
+
+```text
+[cpa] mint protocol failed: ...
+[cpa] mint fallback → browser
+[cpa] mint_method=browser
+```
 
 ---
 
@@ -411,15 +296,17 @@ curl -sS http://127.0.0.1:8317/v1/chat/completions \
 
 | 现象 | 原因 / 处理 |
 |------|-------------|
-| 协议 `sso invalid` | SSO 过期或无效；会回退浏览器；检查账本第三段 |
+| 协议 `sso invalid` | SSO 过期或无效；自动回退浏览器；检查账本第三段 |
 | 协议 verify/approve 失败 | 会话态变化 / 风控；看日志后自动回退浏览器 |
 | 一直 `authorization_pending` | 浏览器路径未完成 consent；需到「设备已授权」且 token 200 |
-| Cloudflare / Turnstile | 回退浏览器时关 headless、开 turnstilePatch、检查代理 |
+| Cloudflare / Turnstile 拦截 | 回退浏览器时关 headless、开 turnstilePatch、检查代理 |
 | Hotmail 收不到码 | 检查四段凭证、ClientID/Token、IMAP 主机与 alias 计数 |
 | 有 token 但无 grok-4.x 免费模型 | `cpa_base_url` 是否为 `cli-chat-proxy` |
-| 注册成功但无 `cpa_auths` | `cpa_export_enabled`？看 `cpa_auth_failed.txt` |
+| 注册成功但无 `cpa_auths` | `cpa_export_enabled`？看日志与 `cpa_auth_failed.txt` |
+| 代理 TLS 抖动（`UNEXPECTED_EOF` / `curl 35`） | 并发下偶发，重试/回退可吸收；降低 `--threads` 或换代理节点 |
+| SSO 扫到「活」但 mint 报 `User is blocked` | xAI 侧封号，cookie 还在但账号被拦，解锁前不可恢复 |
 
-调试原则：以 **token 端点返回 `access_token` + refresh_token** 为准；probe 看 `/v1/models` 是否含最新 `grok-4.x` 免费模型（当前 `grok-4.6`）。
+调试原则：以 **token 端点返回 `access_token` + `refresh_token`** 为准；probe 看 `/v1/models` 是否含最新 `grok-4.x` 免费模型（当前 `grok-4.6`）。
 
 ---
 
@@ -427,49 +314,35 @@ curl -sS http://127.0.0.1:8317/v1/chat/completions \
 
 ```
 grok_reg-protocol_cpa/
-  register_cli.py              # CLI 批量注册
-  grok_register_ttk.py         # 浏览器注册核心 + Hotmail 等
-  cpa_export.py                # 成功 hook
+  register_cli.py              # CLI 批量注册（主入口）
+  grok_register_ttk.py         # 浏览器注册核心 + 邮箱/Hotmail 等 + GUI
+  cpa_export.py                # 注册成功 hook（CPA 铸造入口）
   cpa_xai/
     protocol_mint.py           # SSO 纯 HTTP Device Flow（协议优先）
     mint.py                    # 协议 → 浏览器回退编排
-    browser_confirm.py         # 原浏览器 consent
+    browser_confirm.py         # 浏览器 consent 路径
     oauth_device.py / schema.py / writer.py / probe.py ...
   scripts/
-    backfill_cpa_xai_from_accounts.py
-    export_cpa_xai_from_grok_auth.py
-  config.example.json
+    backfill_cpa_xai_from_accounts.py   # 存量号补 CPA
+    backfill_all_ledgers.py             # 多账本全量补跑（--target/--alive-file）
+    sweep_sso_alive.py                  # SSO 存活扫描
+    resweep_errors.py                   # 扫描错误重扫
+    verify_cpa_tokens.py                # CPA token 全量验证（轮换）
+    export_cpa_xai_from_grok_auth.py    # 从 ~/.grok/auth.json 导出
+  config.example.json          # 全字段模板（带注释）
   config.cloudflare.json       # 临时邮箱 Worker 预设（setup 脚本用它生成 config.json）
   setup.ps1 / setup.sh         # 一键环境准备（Windows / macOS / Linux）
-  config.json                  # 本地实配（勿外泄）
-  mail_credentials.example.txt # 邮箱----密码----ClientID----Token 模板
-  mail_credentials.txt         # 本地邮箱池（勿提交）
-  accounts_cli.txt             # 主账本
-  cpa_auths/                   # xai-<email>.json（分享包勿带）
-  turnstilePatch/
+  turnstilePatch/              # CF Turnstile 浏览器扩展补丁
+  mail_credentials.example.txt # Hotmail 四段凭证模板
   pyproject.toml / uv.lock / mise.toml
+  # 运行时产物（.gitignore 已排除）：
+  # config.json · accounts_*.txt · cpa_auths/ · emails_*.txt · screenshots/
 ```
 
 ---
 
-> 快速开始（clone → 5 分钟跑起来）见文档顶部「快速开始」章节：`setup.ps1` / `setup.sh` 一键装好依赖并生成 `config.json`，改一下 `proxy` 端口即可跑 `uv run python -u register_cli.py --extra 1`。
->
-> 用 Hotmail 邮箱的话额外两步：
->
-> ```bash
-> cp mail_credentials.example.txt mail_credentials.txt   # 填 邮箱----密码----ClientID----Token
-> # 并把 config.json 的 email_provider 改为 "hotmail"
-> ```
----
-
 ## 安全
 
-- `config.json`、`mail_credentials.txt`、账本、`cpa_auths/*.json` 含密码与 refresh_token，**权限 600 / 勿提交 git / 勿塞进分享包**
-- 免费 Build 有额度与风控；批量 mint 请控速（`--sleep`）
-
----
-
-## 相关
-
-- CLIProxyAPI / CPA：自备；将 `cpa_auths/xai-*.json` 拷到 CPA auth-dir 即可
-- 免费 Grok 4.5 只走 Build OIDC + `cli-chat-proxy`，不是网页 SSO
+- `config.json`、`mail_credentials.txt`、账本、`cpa_auths/*.json` 含密码与 refresh_token，**权限 600 / 勿提交 git / 勿塞进分享包**（`.gitignore` 已排除，分发前自查）
+- 免费 Build 有额度与风控；批量 mint 请控速（`--sleep` / 降低 `--threads`）
+- `verify_cpa_tokens.py` 会轮换 token：验证后旧文件里的 token 作废，重新分发以 `cpa_auths/` 最新内容为准
