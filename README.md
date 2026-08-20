@@ -4,7 +4,7 @@
 
 **核心能力：**
 
-- **注册**：本机 Chrome + turnstilePatch 过 CF；邮箱支持 Cloudflare 临时邮箱 Worker（无 key，预设已配）/ Hotmail 四段凭证（XOAUTH2 IMAP 收码）/ CloudMail / testmail 等
+- **注册**：本机 Chrome + turnstilePatch 过 CF；邮箱支持 Cloudflare 临时邮箱 Worker（自建，填 API 地址 + 域名）/ Hotmail 四段凭证（XOAUTH2 IMAP 收码）/ CloudMail / testmail 等
 - **SSO 导出**：注册成功自动写账本 `email----password----sso`，可推 grok2api Web 池（可选）
 - **CPA 铸造（协议优先）**：有 SSO 时先走**纯 HTTP Device Flow**（约 6–9s/号），失败回退**有头浏览器 consent**（约 45–90s/号），产出 `cpa_auths/xai-<邮箱>.json`
 - **运维脚本**：存量号批量补 CPA、SSO 存活扫描、CPA token 全量验证（refresh grant 轮换）
@@ -61,7 +61,7 @@ uv sync
 cp config.cloudflare.json config.json
 ```
 
-### 第 2 步：改代理端口（唯一必改项）
+### 第 2 步：填代理端口 + 邮箱服务
 
 打开 `config.json`，把 `proxy` 改成你本机的代理端口：
 
@@ -69,7 +69,12 @@ cp config.cloudflare.json config.json
 "proxy": "http://127.0.0.1:7890"
 ```
 
-邮箱服务（临时邮箱 Worker）和 CPA 参数预设里都已填好，其余字段不用动；CPA 铸造想走另一个代理就填 `cpa_proxy`（留空 = 跟 `proxy` 相同）。
+邮箱服务二选一：
+
+- **cloudflare（临时邮箱 Worker）**：填你自己的 Worker 地址与域名 —— `cloudflare_api_base`（Worker 的 API 根 URL）+ `defaultDomains`（Worker 绑定的邮箱域名）；接口约定见下文「邮箱：Cloudflare 临时邮箱 Worker（自建）」
+- **其他 provider（没有 Worker 时推荐）**：`"email_provider": "hotmail"` + `mail_credentials.txt` 四段凭证，或 `cloudmail` 等，字段见 `config.example.json`
+
+CPA 参数预设里已填好，其余字段不用动；CPA 铸造想走另一个代理就填 `cpa_proxy`（留空 = 跟 `proxy` 相同）。
 
 ### 第 3 步：冒烟测试
 
@@ -199,6 +204,18 @@ curl -sS http://127.0.0.1:8317/v1/chat/completions \
 
 运行时行为：默认先用原邮箱，后续用随机 plus alias（如 `name+k8s2p9qa@domain`）；经 `outlook.office365.com`（可回退 `imap-mail.outlook.com`）XOAUTH2 IMAP 拉验证码；refresh_token 轮换会**自动回写**文件；成功/失败/占用中的 alias 参与去重与 `hotmail_max_aliases_per_account` 计数。
 
+### 邮箱：Cloudflare 临时邮箱 Worker（自建）
+
+`"email_provider": "cloudflare"` 时，注册机按 `cloudflare_api_base` + `cloudflare_path_*` 调你的 Worker。本仓库代码已适配 cloudflare_temp_email v1.8.x 约定：
+
+| 用途 | 方法 + 路径 | 说明 |
+|------|-------------|------|
+| 建地址 | `POST /api/new_address` | body `{"domain":"your-mail-domain.com"}` → `{address, jwt, ...}` |
+| 收信 | `GET /api/mails` | 头 `Authorization: Bearer <建地址返回的 jwt>` |
+| 域名 / 令牌（备用） | `GET /api/domains`、`GET /api/token` | 旧版接口，代码按 `cloudflare_path_*` 可配 |
+
+四个路径可用 `cloudflare_path_domains / cloudflare_path_accounts / cloudflare_path_token / cloudflare_path_messages` 覆盖（预设默认 `/api/domains, /api/new_address, /api/token, /api/mails`），鉴权方式见 `cloudflare_auth_mode`（预设 `none`，即 Worker 无 key）。没有自己的 Worker 就改用 `hotmail` / `cloudmail` 等 provider。
+
 ---
 
 ## 配置
@@ -208,7 +225,7 @@ curl -sS http://127.0.0.1:8317/v1/chat/completions \
 | 文件 | 说明 |
 |------|------|
 | `config.json` | 本地实配（setup 脚本从预设生成；**含本机信息，勿提交/勿分享**） |
-| `config.cloudflare.json` | 临时邮箱 Worker 预设（开箱即用，只需改 `proxy`） |
+| `config.cloudflare.json` | 临时邮箱 Worker 预设（填你自己的 Worker 地址与域名） |
 | `config.example.json` | 全字段模板，每个字段带 `"// 注释"` 键详解（加载时自动忽略） |
 
 ### 代理优先级

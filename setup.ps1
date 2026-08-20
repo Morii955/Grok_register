@@ -1,4 +1,4 @@
-﻿# Grok 注册机 - Windows 一键环境准备
+# Grok 注册机 - Windows 一键环境准备
 # 用法：在项目根目录打开 PowerShell，运行：
 #   powershell -ExecutionPolicy Bypass -File setup.ps1
 # 脚本做四件事：装/查 uv → uv sync（自动拉 Python 3.13，不用自己装 Python）→ 查 Chrome → 生成 config.json
@@ -72,16 +72,18 @@ if (Test-Path 'config.json') {
 
 Write-Host ''
 Write-Host '============================================================' -ForegroundColor Green
-Write-Host '  环境准备完成！接下来只做一件事 + 两条命令：'
+Write-Host '  环境准备完成！接下来补配置 + 跑命令：'
 Write-Host ''
-Write-Host '  1. 【必改】打开 config.json，把 proxy 端口改成本机的代理端口，例如：'
+Write-Host '  1.【必改】打开 config.json，把 proxy 端口改成本机的代理端口，例如：'
 Write-Host '       "proxy": "http://127.0.0.1:7890"'
-Write-Host '     （cpa_proxy 留空即可 = 跟 proxy 一样。邮箱/CPA 参数已预填好。）'
+Write-Host '  2.【邮箱】cloudflare 模式：填你自己的临时邮箱 Worker 地址与域名'
+Write-Host '       （cloudflare_api_base + defaultDomains）；或用 hotmail/cloudmail 等其他 provider。'
+Write-Host '     （cpa_proxy 留空即可 = 跟 proxy 一样；CPA 参数已预填。）'
 Write-Host ''
-Write-Host '  2. 冒烟测试（先注册 1 个，看到 "mint protocol SUCCESS" 即链路正常）：'
+Write-Host '  3. 冒烟测试（先注册 1 个，看到 "mint protocol SUCCESS" 即链路正常）：'
 Write-Host '       uv run python -u register_cli.py --extra 1 --threads 1'
 Write-Host ''
-Write-Host '  3. 批量跑（示例 200 个、4 并发）：'
+Write-Host '  4. 批量跑（示例 200 个、4 并发）：'
 Write-Host '       uv run python -u register_cli.py --extra 200 --threads 4'
 Write-Host ''
 Write-Host '  产出位置：'
